@@ -4,7 +4,7 @@ name: Backend CI - Test, Build and Push Images to ACR
 
 # Triggers:
 # - Manual via "Run workflow"
-# - Pushes to main, but only when backend paths (or this file) change
+# - Pushes to main when backend paths (or this file) change
 on:
   workflow_dispatch:
   push:
@@ -14,14 +14,12 @@ on:
       - 'backend/**'
       - '.github/workflows/backend_ci.yml'
 
-# Global env (mapped from your existing GitHub repo secrets)
+# Global env mapped from your GitHub repo secrets (you already created these)
 env:
-  # e.g., sit722acr235906.azurecr.io
-  ACR_LOGIN_SERVER: ${{ secrets.REGISTRY_LOGIN_SERVER }}
-  ACR_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-  ACR_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
-  # Unique tag for traceability
-  IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}
+  ACR_LOGIN_SERVER: ${{ secrets.REGISTRY_LOGIN_SERVER }}   # e.g. sit722acr235906.azurecr.io
+  ACR_USERNAME:     ${{ secrets.REGISTRY_USERNAME }}       # e.g. sit722acr235906
+  ACR_PASSWORD:     ${{ secrets.REGISTRY_PASSWORD }}       # the long password you printed earlier
+  IMAGE_TAG:        ${{ github.sha }}-${{ github.run_id }} # unique, traceable tag
 
 jobs:
   # ---------------------------
@@ -72,19 +70,17 @@ jobs:
         run: |
           python -V
           pip install --upgrade pip
-          # Install per-service requirements
           for req in backend/*/requirements.txt; do
             echo "Installing $req"
             pip install -r "$req"
           done
-          # CI tools
           pip install pytest httpx flake8
 
       - name: Lint (non-blocking)
         continue-on-error: true
         run: |
           flake8 backend/product_service || true
-          flake8 backend/order_service || true
+          flake8 backend/order_service  || true
 
       - name: Run product_service tests
         working-directory: backend/product_service
@@ -119,33 +115,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show Docker info (debug)
+        run: docker info
+
       - name: Docker login to ACR
-        # Uses your ACR admin username/password from secrets
         run: |
           echo "${ACR_PASSWORD}" | docker login "${ACR_LOGIN_SERVER}" -u "${ACR_USERNAME}" --password-stdin
 
       - name: Build and push Product Service (latest + IMAGE_TAG)
         run: |
-          # Build
           docker build -t "${{ env.ACR_LOGIN_SERVER }}/product_service:latest" ./backend/product_service/
-          # Push latest
           docker push "${{ env.ACR_LOGIN_SERVER }}/product_service:latest"
-          # Tag with unique IMAGE_TAG and push
-          docker tag "${{ env.ACR_LOGIN_SERVER }}/product_service:latest" "${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}"
+          docker tag  "${{ env.ACR_LOGIN_SERVER }}/product_service:latest" "${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}"
           docker push "${{ env.ACR_LOGIN_SERVER }}/product_service:${{ env.IMAGE_TAG }}"
 
       - name: Build and push Order Service (latest + IMAGE_TAG)
         run: |
-          # Build
           docker build -t "${{ env.ACR_LOGIN_SERVER }}/order_service:latest" ./backend/order_service/
-          # Push latest
           docker push "${{ env.ACR_LOGIN_SERVER }}/order_service:latest"
-          # Tag with unique IMAGE_TAG and push
-          docker tag "${{ env.ACR_LOGIN_SERVER }}/order_service:latest" "${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}"
+          docker tag  "${{ env.ACR_LOGIN_SERVER }}/order_service:latest" "${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}"
           docker push "${{ env.ACR_LOGIN_SERVER }}/order_service:${{ env.IMAGE_TAG }}"
 
       - name: Logout from registry
         if: always()
         run: docker logout "${ACR_LOGIN_SERVER}"
-
-# trigger run for SIT722 7.1P
